@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec docker run --rm -i -v "/home/pranavsai/askati:/app" -w "/app" -e PYTHONPATH=/app/backend --net=host app_manufacturing_checklisting-main-api:latest pytest "$@"

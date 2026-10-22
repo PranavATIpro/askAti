@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: runbook_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-runbook_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-runbook_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-runbooks_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-runbook_user} -d ${POSTGRES_DB:-runbooks_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: runbook_backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DEBUG: ${DEBUG:-True}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-runbook_user}:${POSTGRES_PASSWORD:-runbook_pass}@db:5432/${POSTGRES_DB:-runbooks_db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-ati_admin_dev_secret_change_in_prod}
+      ENABLE_PGVECTOR: ${ENABLE_PGVECTOR:-false}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: runbook_frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api
+
+volumes:
+  db_data:

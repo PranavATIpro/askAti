@@ -1,0 +1,105 @@
+﻿Runbook Name,Form Type,Ticket Type,Category,Product Area,Components,Step Number,Step Title,"Command ",Instruction,Warning,Notes
+Map Generation,Default Ticket Form,Knowlege,Software,Map,Generate Map,1,Command to generate,"$ docker run --gpus all -it -v ""Manual Run Dataset ending with /"":/app/data/ mapping_and_stitching mapping --data_dir /app/data  --debug --posegraph_opt  --zmin 0.3 --zmax 12.0 --posegraph_opt --map_name /app/data/""custom map name""
+",This command is used for generating map,,"We can make changes on zmax and zmin for better map rendering. We can also add stuff like :
+  • --use_wheel_pose_search_prob 
+  • --use_wheel_motion_check 
+  • --correct_roll_pitch"
+Find Obstacle Detected on Streamlit,Default Ticket Form,Knowlege,Software,Streamlit,Lidar,1,,,"Open Streamlit :
+  • Go to Errors  
+  • Get the Frame id when the obstacle was detected 
+  • Go to lidar insert the frame id 
+  • Select Drivable space 
+We will get the image where it was detected
+",,
+Streamlit,Default Ticket Form,Knowlege,Software,Streamlit,Heat Map,,,,Heatmap is generated to check for low network strength,,
+Streamlit,Default Ticket Form,Knowlege,Software,Streamlit,Plots,,,,"Important plots
+  • tracker.csv is used to plot for cte,v,w
+  • low_level_control.csv is used to plot for encoder
+  • motor_can_debug.py is used only by XT bots to plot for hub motor r_ref,r_act,l_ref,l_ref
+",,
+Battery,Default Ticket Form,Incident,Hardware,Sensor,Battery,,,,"  • If Battery is the problem then: tricolor led should be blinking (if not them maybe emergency button is pressed if the issue still persists then issue is with  the epo board or aux battery)",,"We need to make sure.,
+  • epo board led should be blinking
+  • we need to check the voltage physically through charger bay (if charger bay has a problem then check with multimeter) "
+Variable Padding,Default Ticket Form,Knowlege,Software,Map,Zones,,,,"  • Add variable padding zones in map using deployment manager
+  • apply_variable_padding = true under [control.policy]",,
+PID Tuning,Default Ticket Form,Knowlege,Software,Motors,Hub Motor,1,,,"This is only for XT bots
+  • Check the motor_can_debug.csv plots
+  • If motor ref and act is different and is having frequent cte issues then PID Tuning is required",,PID Tuning will be done by the service engineer
+Flashing the Delfino,,,,,,2,,bash flash.sh,Run the flashing script,,"if command not working then run
+  •  bash flash_v2.sh
+Even after that it does not work then we have to check the connections physically."
+Flashing the Delfino,Default Ticket Form,Knowlege,Software,Sensor,Delfino Board,1,,"cd uniflash ",Changing the delfino board or after a code update delfino is automatically flashed if it does not then we might have to check log it will say delfino incompatible it should be greater than v17. Which means we have to flash the delfino.,,
+AMR Indications,Default Ticket Form,Knowlege,Hardware,Indicator,LED,,Indications on the Bot,,"Indications
+  • constant Green = fleet
+  • blinking green = waiting for dispatch
+  • constant Red = Error
+  • blinking red = emergency button is pressed
+  • running red = Low battery
+  • yellow = obstacle detected
+  • no indication = mode is off",,"If in Tug, only one indicator is on then it means it has  delfino issue, we need to do Remote wheel calibration if not connecting or pinging then we need a to check the bot physically"
+PS4 Troubleshoot,,,,,,2,,"ping 192.168.1.100 (xt,tug,xt-lite)
+ping 192.168.1.1xx (pm,monofork)(xx is the last 2 digit of lidar serial no.) ","If this is the case than it mean hub motor issue or lidar issue.Check the plots,ping the lidar,check lidar firmware version, it should be greater than 2.5.2 (2.5.3 current latest version)",,"Indications :
+- PS4 not turning on means battery died
+- Full Charge will show Constant yellow light
+- Charging will show Blinking Yellow light "
+PS4 Troubleshoot,Default Ticket Form,Incident,Hardware,Controller,PS4,1,If the ps4 is blinking red light,,"Check in mule.log if it says missing wheel encoders,stale_ode data and flashing red. Then we need to do delfino flash, before we need to check delfino is on or off.",,In config.toml we will check if delfino is on or off
+Lidar,,,,,,2,,sudo ethtool eth0,"If it does not ping then run the command it should show these 
+ Link detected : yes
+ speed : 100 mb/s
+ Auto-negosation : off 
+If not then physically reconnect the lidar wire",,
+"Lidar ",Default Ticket Form,Incident,Hardware,Sensor,Lidar,1,,"  • ping 192.168.1.100 (xt,tug,xt-lite)
+  • ping 192.168.1.1xx (pm,monofork)(xx is the last 2 digit of lidar serial no.) ",Try Pinging the lidar,,
+Connection Issues,Default Ticket Form,Incident,Hardware,Network,Network Card,1,,lsusb,Run the command if the command is not available then download the necessary packages,,"To check for network devices 
+network : “ nmcli devices “"
+"Network issues ",,,,,,3,,cd /var/log/syslog,If issue is still there then check syslog as given in the command,,
+"Network issues ",,,,,,2,,iwconfig,"Check for the signal level 
+  • intel below: -75db
+  • realtek signal level above or equal to: 30%",,"  • If nickname is present then it means that the network card is realtek
+  • If nickname is not present then it means that the network card is intel"
+"Network issues ",Default Ticket Form,Incident,Software,Network,Network Card,1,Disconnected but still pings,nmtui,Check if the amr is connected to the required network,,To check for the connections available run this command : “ cd etc/NetworkManager/system-connections “
+Generic Error (Sound),,,,,,3,,docker cp run_sound.sh,If the issue still persists run the command and check for ATI card number and change it from 0.4 to 1.4,,A document is present on slack based on this issue
+Generic Error (Sound),,,,,,2,,"docker kill sound
+docker restart sound",If it is restarting continuously then run these commands.,,
+Generic Error (Sound),Default Ticket Form,Incident,Software,Sound,Speaker,1,,docker ps,Check if container is restarting continuously,,
+"Max Current (Powerboard, hub motor died)",,,,,,2,,,"Check load in stream lit current plots more tham 30 amps means hub motor issue, which will be needed to be checked physically",,
+"Max Current (Powerboard, hub motor died)",Default Ticket Form,Incident,Hardware,Motors,Powerboard,1,,,Check the load with the operator,,
+Delfino Died (Device Error),Default Ticket Form,Incident,Hardware,Sensor,Delfino Board,1,,,Check the position of the wheels if the wheels is not straight then perform wheel calibration,,
+Encoder stalling,,,,,,2,,,"  • If one of the encoder is stalling then check the low_level_control.csv plots in streamlit
+  • If both of the encoders is stalling then check hub motor connection physically.",,
+Encoder stalling,Default Ticket Form,Incident,Hardware,Sensor,Encoder,1,,tail -f run/mule.log,Check the log to see which encoder is stalling,,
+Ghost Obstacle (Obstacle detected),,,,,,3,,docker restart mule,Restart the docker mule container,,"To check the docker containers
+docker ps"
+Ghost Obstacle (Obstacle detected),,,,,,2,,"trim = [0,0,0,240] in the config.toml under [perception.drivable.rgbd.front]","Camera will detect reflection most of the time, so we need to trim it.",,
+Ghost Obstacle (Obstacle detected),Default Ticket Form,Incident,Software,Sensor,Lidar,1,,,"Open streamlit visualizer, and check the obstacle is detected by lidar or camera ",,
+Runaway Monitor died (Generic Error),,,,,,3,,,If that did not work then the AMR need to be checked physically.,,
+Runaway Monitor died (Generic Error),,,,,,2,,,If that did not work then enable ekf on the config.toml,,
+Runaway Monitor died (Generic Error),Default Ticket Form,Incident,Software,Sensor,Encoder,1,,docker restart mule,"Restart the mule container ",,
+Device Monitor died (Camera),,,,,,3,,,If that did not work then check the connection physically,,
+Device Monitor died (Camera),,,,,,2,,,If this does not work then try Hard Restarting the AMR,,
+Device Monitor died (Camera),Default Ticket Form,Incident,Hardware,Sensor,Camera,1,Restart the mule container,docker restart mule,,,docker ps can be used to check the containers running
+Can sidekick (ultrasound and battery),Default Ticket Form,Incident,Hardware,Navigation,Sidekick Board,1,,,Hard restart the AMR,,"Possible Problems 
+USB loose connection, Cable Loose Connection, Data Latency due to electical noise"
+Localization Issue,Default Ticket Form,Incident,Software,Navigation,,1,Recover the AMR in the station,,,,
+High CTE (control_module),,,,,,5,,,Book a new trip,,
+High CTE (control_module),,,,,,4,,,"Delete the previous trip ",,
+High CTE (control_module),,,,,,3,,,"Go to manage trips ",,
+High CTE (control_module),,,,,,2,,,Open FM Dashboard,,
+High CTE (control_module),Default Ticket Form,Incident,Software,Navigation,Control Module,1,Cross Track Error,,"Recover the AMR in the Station ",,
+Sensor Calibration (Camera/Lidar),,,,,,4,,docker restart mule,Restart the mule container,,
+Sensor Calibration (Camera/Lidar),,,,,,3,,bash sensor_calibration.sh,Run the script,,
+Sensor Calibration (Camera/Lidar),,,,,,2,,cd tools,,,
+Sensor Calibration (Camera/Lidar),Default Ticket Form,Incident,Software,Sensor,Camera,1,SSH into AMR,ssh ati@ip-addr,Access the AMR through SSH,,No obstacle should be there within 5m
+Wheel Calibration,,,,,,6,Important Warning,,,AMR mode will automatically turn OFF during calibration,
+Wheel Calibration,,,,,,5,Align wheels manually,,Connect PS4 controller and align wheels using left or right buttons,,
+Wheel Calibration,,,,,,4,Follow script instructions,,"If wheels are straight enter yes, otherwise enter no",,
+Wheel Calibration,,,,,,3,Run calibration script,bash wheel_calibration.sh,Start calibration script,,
+Wheel Calibration,,,,,,2,Go to tools directory,cd tools,,,
+Wheel Calibration,Default Ticket Form,Incident,Software,Sensor,Wheel Calibration,1,SSH into AMR,ssh ati@ip-addr,Access the AMR through SSH,,
+,Default Ticket Form,Incident,Software,Sensor,Wheel Calibration,,,,,,
+,Change Form,Task,Hardware,Navigation,Lidar,,,,,,
+,,Problem,,Motors,Camera,,,,,,
+,,,,Battery,Control Module,,,,,,
+,,,,,Sidekick Board,,,,,,
+,,,,,Encoder,,,,,,
+,,,,,Delfino Board,,,,,,

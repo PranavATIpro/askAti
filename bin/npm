@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec docker run --rm -i -v "/home/pranavsai/askati:/workspace" -w "/workspace/frontend" -u "$(id -u):$(id -g)" node:20-alpine npm "$@"

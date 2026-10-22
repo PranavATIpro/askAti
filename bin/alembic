@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec docker run --rm -i -v "/home/pranavsai/askati/backend:/app" -w "/app" --net=host app_manufacturing_checklisting-main-api:latest alembic "$@"

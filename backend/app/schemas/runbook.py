@@ -41,6 +41,28 @@ class RunbookCreate(RunbookBase):
     steps: List[RunbookStepCreate] = []
 
 
+class RunbookStepUpdate(BaseModel):
+    id: Optional[str] = None
+    step_number: int = 1
+    step_title: Optional[str] = None
+    command: Optional[str] = None
+    instruction: Optional[str] = None
+    warning: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class RunbookUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    form_type: Optional[str] = None
+    ticket_type: Optional[str] = None
+    category: Optional[str] = None
+    product_area: Optional[str] = None
+    components: Optional[str] = None
+    source_url: Optional[str] = None
+    steps: Optional[List[RunbookStepUpdate]] = None
+
+
 class RunbookResponse(RunbookBase):
     id: str
     content_hash: Optional[str] = None

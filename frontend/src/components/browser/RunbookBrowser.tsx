@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Loader2, BookOpen, Layers, RefreshCw } from 'lucide-react';
+import { Search, Filter, Loader2, BookOpen, Layers, RefreshCw, Plus } from 'lucide-react';
 import { Runbook, RunbookListResponse } from '../../types';
 import { api } from '../../services/api';
 import { RunbookCard } from './RunbookCard';
 import { RunbookDetailModal } from './RunbookDetailModal';
+import { CreateRunbookModal } from './CreateRunbookModal';
 
 interface RunbookBrowserProps {
   onAskAboutRunbook: (title: string) => void;
@@ -17,6 +18,9 @@ export const RunbookBrowser: React.FC<RunbookBrowserProps> = ({ onAskAboutRunboo
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedTicketType, setSelectedTicketType] = useState('All');
   const [activeRunbookId, setActiveRunbookId] = useState<string | null>(null);
+
+  // Modals state
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   const fetchRunbooks = () => {
     setLoading(true);
@@ -43,29 +47,41 @@ export const RunbookBrowser: React.FC<RunbookBrowserProps> = ({ onAskAboutRunboo
     <div className="flex-1 flex flex-col h-full bg-slate-50 dark:bg-slate-950 overflow-hidden">
       {/* Top Filter and Search Bar */}
       <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-sky-600" />
               <span>Operational Runbook Knowledge Base</span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Structured procedures imported from Notion database ({data?.total || 0} runbooks available)
+              Verified troubleshooting procedures for ATI AMRs ({data?.total || 0} runbooks available)
             </p>
           </div>
-          <button
-            onClick={fetchRunbooks}
-            className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Refresh runbooks"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              title="Add a new runbook manually"
+            >
+              <Plus className="w-4 h-4" />
+              <span>New Runbook</span>
+            </button>
+
+            <button
+              onClick={fetchRunbooks}
+              className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              title="Refresh runbooks"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {/* Search & Filter Row */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="relative md:col-span-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
               value={search}
@@ -141,20 +157,35 @@ export const RunbookBrowser: React.FC<RunbookBrowserProps> = ({ onAskAboutRunboo
             ))}
           </div>
         ) : (
-          <div className="py-20 text-center space-y-2">
+          <div className="py-20 text-center space-y-3">
             <p className="text-sm font-medium text-slate-700 dark:text-slate-300">No matching runbooks found</p>
             <p className="text-xs text-slate-500">
-              Try adjusting your search keywords or resetting product area and category filters.
+              Try adjusting your search keywords, or add a new runbook manually.
             </p>
+            <button
+              onClick={() => setIsCreateOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create New Runbook</span>
+            </button>
           </div>
         )}
       </div>
 
-      {/* Runbook Detail Drawer */}
+      {/* Runbook Detail Drawer (with View & Manual Edit Mode) */}
       <RunbookDetailModal
         runbookId={activeRunbookId}
         onClose={() => setActiveRunbookId(null)}
         onAskAboutRunbook={onAskAboutRunbook}
+        onRunbookUpdated={fetchRunbooks}
+      />
+
+      {/* Create New Runbook Modal */}
+      <CreateRunbookModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        onRunbookCreated={fetchRunbooks}
       />
     </div>
   );

@@ -301,3 +301,4 @@ The initial version uses PostgreSQL full-text indexing and exact keyword ranking
 - **Strict Parameterized SQL**: All queries use SQLAlchemy ORM expressions; zero raw string interpolation.
 - **Non-Executable Policy**: Commands are rendered in formatted code blocks with copy utilities only; the application never executes arbitrary commands on the host machine or robot hardware.
 - **Zero Hallucination Guardrails**: If an operational procedure is not in the verified database, the assistant refuses to generate fictional terminal commands.
+# askAti

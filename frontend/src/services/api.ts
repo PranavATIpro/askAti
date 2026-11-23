@@ -45,6 +45,95 @@ export const api = {
     return res.json();
   },
 
+  async createRunbook(payload: {
+    title: string;
+    description?: string;
+    category?: string;
+    product_area?: string;
+    components?: string;
+    form_type?: string;
+    ticket_type?: string;
+    source_url?: string;
+    steps: Array<{
+      step_number: number;
+      step_title?: string;
+      command?: string;
+      instruction?: string;
+      warning?: string;
+      notes?: string;
+    }>;
+  }): Promise<Runbook> {
+    const res = await fetch(`${API_BASE}/runbooks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to create runbook' }));
+      throw new Error(err.detail || 'Failed to create runbook');
+    }
+    return res.json();
+  },
+
+  async updateRunbook(
+    id: string,
+    payload: {
+      title?: string;
+      description?: string;
+      category?: string;
+      product_area?: string;
+      components?: string;
+      form_type?: string;
+      ticket_type?: string;
+      source_url?: string;
+      steps?: Array<{
+        step_number: number;
+        step_title?: string;
+        command?: string;
+        instruction?: string;
+        warning?: string;
+        notes?: string;
+      }>;
+    }
+  ): Promise<Runbook> {
+    const res = await fetch(`${API_BASE}/runbooks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to update runbook' }));
+      throw new Error(err.detail || 'Failed to update runbook');
+    }
+    return res.json();
+  },
+
+  async deleteRunbook(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/runbooks/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete runbook');
+  },
+
+  async syncNotionCSV(file: File): Promise<{
+    success: boolean;
+    message: string;
+    records_created: number;
+    records_updated: number;
+    records_skipped: number;
+    total_runbooks: number;
+  }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/runbooks/sync-notion`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Notion sync failed' }));
+      throw new Error(err.detail || 'Notion sync failed');
+    }
+    return res.json();
+  },
+
   async sendChatMessage(payload: {
     query: string;
     conversation_id?: string;
@@ -124,6 +213,33 @@ export const api = {
   async getIngestionJobs(): Promise<{ total: number; jobs: IngestionJob[] }> {
     const res = await fetch(`${API_BASE}/ingestion/jobs`);
     if (!res.ok) throw new Error('Failed to load ingestion history');
+    return res.json();
+  },
+
+  async getLLMProviders(): Promise<{
+    active: { provider: string; model: string; label: string; description: string };
+    available_options: Array<{ id: string; name: string; tier: string; requires_key: boolean; description: string }>;
+  }> {
+    const res = await fetch(`${API_BASE}/assistant/providers`);
+    if (!res.ok) throw new Error('Failed to load LLM providers');
+    return res.json();
+  },
+
+  async updateLLMSettings(payload: {
+    provider?: string;
+    gemini_api_key?: string;
+    gemini_model?: string;
+    groq_api_key?: string;
+    groq_model?: string;
+    ollama_base_url?: string;
+    ollama_model?: string;
+  }): Promise<{ success: boolean; active_provider: any }> {
+    const res = await fetch(`${API_BASE}/assistant/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error('Failed to update LLM settings');
     return res.json();
   },
 };

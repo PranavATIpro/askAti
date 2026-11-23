@@ -2,11 +2,12 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-COPY package.json ./
-# If node_modules exists in context, copy it; else npm install
+COPY package.json package-lock.json* ./
+RUN npm install --frozen-lockfile 2>/dev/null || npm install
+
 COPY . .
 
-RUN ./node_modules/.bin/vite build || npx vite build
+RUN npm run build
 
 FROM nginx:alpine
 

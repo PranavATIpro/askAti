@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles, Loader2, RefreshCw, Cpu, ShieldAlert, ArrowRight } from 'lucide-react';
+import { Send, Loader2, Cpu, ArrowRight, Trash2 } from 'lucide-react';
 import { ChatMessage, ChatSourceItem } from '../../types';
 import { MessageItem } from './MessageItem';
 
@@ -82,18 +82,7 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
               </h2>
               <p className="text-sm text-slate-600 dark:text-slate-400 max-w-xl mx-auto leading-relaxed">
                 Internal troubleshooting intelligence for ATI robotics operations interns and support engineers.
-                Grounded strictly in verified Notion runbooks — never invents unverified terminal commands.
               </p>
-            </div>
-
-            {/* Grounding Notice Card */}
-            <div className="flex items-start gap-3 p-3.5 rounded-lg border border-sky-200 dark:border-sky-900/60 bg-sky-50/70 dark:bg-sky-950/30 text-xs text-sky-900 dark:text-sky-200">
-              <ShieldAlert className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
-              <div className="leading-relaxed">
-                <span className="font-semibold">Zero-Hallucination Policy: </span>
-                Every command, procedure, warning, and note returned is retrieved from the indexed operational
-                database. If a runbook does not exist for an issue, the assistant will explicitly state so.
-              </div>
             </div>
 
             {/* Quick Prompt Cards */}
@@ -163,21 +152,25 @@ export const ChatWorkspace: React.FC<ChatWorkspaceProps> = ({
           <button
             type="submit"
             disabled={!input.trim() || loading}
-            className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xs cursor-pointer"
+            className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 active:scale-95 text-white font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xs cursor-pointer shrink-0"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             <span className="hidden sm:inline ml-1.5">Ask</span>
           </button>
         </form>
-        <div className="max-w-3xl mx-auto flex items-center justify-between text-[11px] text-slate-400 mt-2 px-1">
-          <span>Grounded retrieval active • Strict operational safety</span>
-          <button
-            onClick={onNewChat}
-            className="hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
-          >
-            Clear session
-          </button>
-        </div>
+
+        {/* Subtle Right-Aligned Clear Chat Option when messages exist */}
+        {messages.length > 0 && (
+          <div className="max-w-3xl mx-auto flex items-center justify-end text-[11px] text-slate-400 mt-2 px-1">
+            <button
+              onClick={onNewChat}
+              className="inline-flex items-center gap-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-3 h-3" />
+              <span>Clear session</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

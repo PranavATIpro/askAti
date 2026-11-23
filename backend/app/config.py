@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "runbooks_db"
     POSTGRES_PORT: int = 5432
 
+    # LLM & RAG Settings
+    LLM_PROVIDER: str = "auto"  # auto, gemini, groq, ollama, local
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+
     ADMIN_API_KEY: str = "ati_admin_dev_secret_change_in_prod"
     ENABLE_PGVECTOR: bool = False
     NOTION_API_TOKEN: str = ""

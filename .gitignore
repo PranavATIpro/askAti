@@ -37,3 +37,8 @@ Thumbs.db
 
 # Database data volume
 pgdata/
+
+# Environment secrets
+.env
+.env.*
+!.env.example

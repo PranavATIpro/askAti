@@ -2,7 +2,7 @@ import os
 from app.models.runbook import Runbook, RunbookStep
 from app.models.ingestion import IngestionJob
 
-DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data"))
+DATA_DIR = os.path.abspath("/app/data") if os.path.exists("/app/data") else os.path.abspath(os.path.join(os.path.dirname(__file__), "../data"))
 
 
 def test_preview_and_import_fictional_csv(client, db_session):

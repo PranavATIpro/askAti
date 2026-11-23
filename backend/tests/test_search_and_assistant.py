@@ -88,3 +88,21 @@ def test_assistant_chat_endpoint_unmatched_query(client, db_session):
     assert "No Documented Runbook Found" in data["content"]
     assert data["confidence"] == 0.0
     assert len(data["sources"]) == 0
+
+
+def test_assistant_providers_and_settings(client):
+    # Test GET providers
+    res = client.get("/api/assistant/providers")
+    assert res.status_code == 200
+    pdata = res.json()
+    assert "active" in pdata
+    assert "available_options" in pdata
+    assert len(pdata["available_options"]) >= 4
+
+    # Test POST settings update
+    res2 = client.post("/api/assistant/settings", json={
+        "gemini_model": "gemini-1.5-flash",
+        "groq_model": "llama-3.3-70b-versatile"
+    })
+    assert res2.status_code == 200
+    assert res2.json()["success"] is True

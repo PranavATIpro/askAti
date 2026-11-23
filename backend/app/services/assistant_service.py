@@ -1,84 +1,193 @@
 import re
 import json
-import uuid
+import logging
+import asyncio
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from app.config import settings
 from app.models.runbook import Runbook, RunbookStep
 from app.models.chat import Conversation, Message
 from app.schemas.chat import (
     ChatMessageResponse, ChatSourceItem, CommandItem, TroubleshootingStep
 )
+from app.services.rag_engine import RAGEngine
+
+logger = logging.getLogger(__name__)
 
 
 class AssistantService:
+    # Notice: 'can', 'run', 'check' are preserved because they are crucial technical keywords in robotics
     STOP_WORDS = {
-        "how", "do", "i", "can", "to", "the", "a", "an", "is", "for", "in", "on", "what",
+        "how", "do", "i", "to", "the", "a", "an", "is", "for", "in", "on", "what",
         "which", "when", "where", "why", "who", "with", "from", "at", "by", "of", "and", "or",
-        "please", "help", "me", "investigate", "check", "run", "cover", "covers"
+        "please", "help", "me", "tell", "about", "give", "procedure", "steps", "guide"
+    }
+
+    ROBOTICS_SYNONYMS = {
+        "mule": ["mule", "mule.log", "mulectl", "container"],
+        "amr": ["amr", "bot", "robot", "xt", "tug", "monofork", "pm", "sherpa"],
+        "bot": ["amr", "bot", "robot", "xt", "sherpa"],
+        "bots": ["amr", "bot", "robot", "xt", "sherpa"],
+        "cte": ["cross track error", "cte", "tracker.csv", "high cte", "control_module"],
+        "cross": ["cross track error", "cte", "high cte"],
+        "lidar": ["lidar", "laser", "frame id", "obstacle", "drivable"],
+        "obstacle": ["obstacle", "ghost obstacle", "lidar", "streamlit", "drivable"],
+        "obstacles": ["obstacle", "ghost obstacle", "lidar", "streamlit"],
+        "visualizer": ["visualizer", "streamlit", "8501", "run_visualizer", "fuser"],
+        "streamlit": ["streamlit", "visualizer", "8501", "tracker.csv", "heatmap", "plot"],
+        "plots": ["plot", "plots", "tracker.csv", "low_level_control.csv", "motor_can_debug"],
+        "wifi": ["wifi", "wifiscript", "wifiscan", "network", "nmtui", "10.9.20.33"],
+        "wifiscript": ["wifiscript", "wifiscan", "tar.gz", "wifi"],
+        "network": ["network", "wifi", "ping", "nmtui", "connection", "disconnected"],
+        "encoder": ["encoder", "stalling", "runaway monitor", "low_level_control"],
+        "motor": ["motor", "hub motor", "pid tuning", "powerboard", "motor_can_debug", "current"],
+        "can": ["can", "can sidekick", "motor_can_debug", "sidekick board"],
+        "sidekick": ["can sidekick", "sidekick board", "ultrasound"],
+        "delfino": ["delfino", "flashing the delfino", "wheel calibration", "delfino board", "delfino died"],
+        "ssh": ["ssh", "add ssh key", "get ssh key", "authorized_keys", "ati@"],
+        "slicing": ["data slicing", "slice", "rosbag", "slicing"],
+        "battery": ["battery", "led", "tricolor", "epo", "emergency", "aux battery"],
+        "sound": ["sound", "speaker", "generic error (sound)"],
+        "ps4": ["ps4", "controller", "blinking red", "stale_ode"],
+        "calibration": ["calibration", "calibrate", "wheel calibration", "sensor calibration"],
+        "stalling": ["encoder stalling", "stalling", "runaway monitor"],
+        "ghost": ["ghost obstacle", "obstacle detected", "lidar"],
     }
 
     @classmethod
     def extract_keywords(cls, query: str) -> List[str]:
         cleaned = re.sub(r"[^\w\s\-\_]", " ", query.lower())
         tokens = [w.strip() for w in cleaned.split() if w.strip()]
-        meaningful = [w for w in tokens if w not in cls.STOP_WORDS and len(w) > 2]
-        return meaningful if meaningful else tokens
+        meaningful = [w for w in tokens if w not in cls.STOP_WORDS and len(w) > 1]
+        
+        # Expand with robotics domain synonyms
+        expanded = set(meaningful)
+        for t in meaningful:
+            if t in cls.ROBOTICS_SYNONYMS:
+                expanded.update(cls.ROBOTICS_SYNONYMS[t])
+        
+        return list(expanded) if expanded else tokens
 
     @classmethod
     def score_runbook_match(cls, runbook: Runbook, keywords: List[str], raw_query: str) -> float:
-        """Calculates relevance score based on exact title, component, command, and instruction hits."""
         score = 0.0
         q_lower = raw_query.lower()
+        title_lower = runbook.title.lower()
+        comp_lower = (runbook.components or "").lower()
+        area_lower = (runbook.product_area or "").lower()
+        cat_lower = (runbook.category or "").lower()
 
-        # Exact title substring match
-        if runbook.title.lower() in q_lower or q_lower in runbook.title.lower():
-            score += 40.0
+        # 1. Exact phrase / title matches (highest precision)
+        if title_lower in q_lower or q_lower in title_lower:
+            score += 80.0
+        
+        # Normalize parentheses: e.g. "High CTE (control_module)" matching "high cte" or "control module"
+        clean_title = re.sub(r"[\(\)\-_]", " ", title_lower)
+        for part in clean_title.split():
+            if len(part) > 3 and part in q_lower:
+                score += 25.0
 
-        # Component exact match
-        if runbook.components and any(c.strip().lower() in q_lower for c in runbook.components.split(",")):
+        # 2. Components matching
+        if runbook.components:
+            for c in runbook.components.split(","):
+                c_clean = c.strip().lower()
+                if c_clean and (c_clean in q_lower or q_lower in c_clean):
+                    score += 50.0
+
+        # 3. Product area and Category matching
+        if runbook.product_area and (area_lower in q_lower or q_lower in area_lower):
             score += 30.0
-
-        # Product area exact match
-        if runbook.product_area and runbook.product_area.lower() in q_lower:
+        if runbook.category and (cat_lower in q_lower or q_lower in cat_lower):
             score += 20.0
 
-        # Keyword hits in title and components
-        for kw in keywords:
-            if kw in runbook.title.lower():
-                score += 15.0
-            if runbook.components and kw in runbook.components.lower():
-                score += 12.0
-            if runbook.product_area and kw in runbook.product_area.lower():
-                score += 8.0
-            if runbook.category and kw in runbook.category.lower():
-                score += 5.0
-
-        # Keyword hits in steps
+        # Aggregate step content once to avoid length bias
+        step_content_tokens = set()
+        step_full_text = ""
         for step in runbook.steps:
-            if step.command:
-                cmd_lower = step.command.lower()
-                for kw in keywords:
-                    if kw in cmd_lower:
-                        score += 10.0
-                if "docker" in q_lower and "docker" in cmd_lower:
-                    score += 15.0
-            if step.instruction:
-                inst_lower = step.instruction.lower()
-                for kw in keywords:
-                    if kw in inst_lower:
-                        score += 4.0
-            if step.step_title:
-                st_lower = step.step_title.lower()
-                for kw in keywords:
-                    if kw in st_lower:
-                        score += 6.0
+            st = f"{step.step_title or ''} {step.command or ''} {step.instruction or ''} {step.warning or ''} {step.notes or ''}".lower()
+            step_full_text += " " + st
+            step_content_tokens.update(re.findall(r"[\w\.\-]+", st))
+
+        # Check for technical phrases across step text
+        if "motor_can_debug" in q_lower or "motor can debug" in q_lower:
+            if "motor_can_debug" in step_full_text:
+                score += 70.0
+        if "wheel_calibration_manual" in q_lower and "wheel_calibration_manual" in step_full_text:
+            score += 70.0
+        if "wifiscan" in q_lower and "wifiscan" in step_full_text:
+            score += 70.0
+        if "delfino" in q_lower and "delfino" in title_lower:
+            score += 50.0
+        if "ghost" in q_lower and "ghost" in title_lower:
+            score += 60.0
+
+        # 4. Keyword and synonym hits (counted once per runbook)
+        matched_kw_count = 0
+        for kw in keywords:
+            kw_clean = kw.lower()
+            matched = False
+            if kw_clean in title_lower:
+                score += 25.0
+                matched = True
+            elif comp_lower and kw_clean in comp_lower:
+                score += 20.0
+                matched = True
+            elif area_lower and kw_clean in area_lower:
+                score += 15.0
+                matched = True
+            elif cat_lower and kw_clean in cat_lower:
+                score += 10.0
+                matched = True
+            elif kw_clean in step_content_tokens or kw_clean in step_full_text:
+                score += 12.0
+                matched = True
+            
+            if matched:
+                matched_kw_count += 1
+
+        # Bonus for matching multiple keywords simultaneously
+        if matched_kw_count >= 3:
+            score += 30.0
+        elif matched_kw_count >= 2:
+            score += 15.0
 
         return score
 
     @classmethod
-    def generate_response(
+    def get_active_provider_info(cls) -> Dict[str, Any]:
+        """Returns details about the configured LLM engine."""
+        if settings.GEMINI_API_KEY:
+            return {
+                "provider": "gemini",
+                "model": settings.GEMINI_MODEL,
+                "label": f"Google {settings.GEMINI_MODEL} (Free Tier)",
+                "description": "Fast multi-modal reasoning with free tier."
+            }
+        elif settings.GROQ_API_KEY:
+            return {
+                "provider": "groq",
+                "model": settings.GROQ_MODEL,
+                "label": f"Groq {settings.GROQ_MODEL} (Free Tier)",
+                "description": "Ultra-low latency open-weights model on LPUs."
+            }
+        elif settings.LLM_PROVIDER == "ollama":
+            return {
+                "provider": "ollama",
+                "model": settings.OLLAMA_MODEL,
+                "label": f"Ollama {settings.OLLAMA_MODEL} (Local / Offline)",
+                "description": "100% private on-premise model running locally."
+            }
+        else:
+            return {
+                "provider": "local_grounded",
+                "model": "rule-grounded-synthesizer",
+                "label": "Local Grounded Engine (Free / Built-in)",
+                "description": "Deterministic, zero-latency grounded RAG engine with zero external dependencies."
+            }
+
+    @classmethod
+    async def generate_response_async(
         cls,
         db: Session,
         query: str,
@@ -86,8 +195,7 @@ class AssistantService:
         ticket_context: Optional[dict] = None
     ) -> ChatMessageResponse:
         """
-        Executes strict retrieval against PostgreSQL runbooks and formats a structured response.
-        Persists message to conversation history.
+        Executes grounded RAG retrieval and synthesis with conversational memory.
         """
         # Ensure conversation exists
         if not conversation_id:
@@ -102,6 +210,17 @@ class AssistantService:
                 db.add(conv)
                 db.flush()
 
+        # Load recent message history for multi-turn dialogue context
+        recent_messages = db.query(Message).filter(
+            Message.conversation_id == conversation_id
+        ).order_by(Message.created_at.desc()).limit(6).all()
+        recent_messages.reverse()
+
+        history_for_llm = [
+            {"role": m.role, "content": m.content}
+            for m in recent_messages
+        ]
+
         # Save user message
         user_msg = Message(
             conversation_id=conversation_id,
@@ -111,170 +230,188 @@ class AssistantService:
         db.add(user_msg)
         db.flush()
 
-        keywords = cls.extract_keywords(query)
+        # Extract search keywords and enrich with ticket context if present
+        combined_search_text = query
+        if ticket_context:
+            subj = ticket_context.get("subject", "")
+            tags = " ".join(ticket_context.get("tags", []))
+            combined_search_text = f"{query} {subj} {tags}".strip()
+
+        keywords = cls.extract_keywords(combined_search_text)
         all_runbooks = db.query(Runbook).all()
 
         scored_runbooks: List[Tuple[Runbook, float]] = []
         for rb in all_runbooks:
-            score = cls.score_runbook_match(rb, keywords, query)
+            score = cls.score_runbook_match(rb, keywords, combined_search_text)
             if score > 0:
                 scored_runbooks.append((rb, score))
 
         scored_runbooks.sort(key=lambda x: x[1], reverse=True)
+        top_score = scored_runbooks[0][1] if scored_runbooks else 0.0
 
-        # Handle zero matches
-        if not scored_runbooks or scored_runbooks[0][1] < 5.0:
-            content = (
-                f"### No Documented Runbook Found\n\n"
-                f"No verified operational procedure was found matching your query: **\"{query}\"**.\n\n"
-                f"> **Grounded Retrieval Notice:** The assistant is strictly restricted from inventing "
-                f"undocumented terminal commands, flags, or procedures.\n\n"
-                f"**Suggested Next Steps:**\n"
-                f"- Check the **Runbook Browser** in the sidebar to review available documentation.\n"
-                f"- Ensure relevant Notion runbooks have been exported and imported via the **Admin Ingestion** tab.\n"
-                f"- Try searching by component name (e.g. `Lidar`, `Camera`, `Wheel Calibration`, `Streamlit`, `Battery`)."
-            )
+        candidate_runbooks = [rb for rb, score in scored_runbooks[:4] if score > 5.0]
 
-            assistant_msg = Message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content=content,
-                sources=json.dumps([]),
-                commands=json.dumps([]),
-                warnings=json.dumps([]),
-                suggested_followups=json.dumps([
-                    "How do I generate a map?",
-                    "How can I investigate an obstacle detection issue?",
-                    "Which runbook covers the Streamlit visualizer?"
-                ])
-            )
-            db.add(assistant_msg)
-            db.commit()
+        # Dynamically compute match confidence based on retrieval scoring against live runbooks & steps
+        if not candidate_runbooks or top_score < 10.0:
+            match_confidence = 0.0
+        elif top_score >= 80.0:
+            match_confidence = min(0.99, 0.90 + (top_score - 80.0) * 0.0008)
+        elif top_score >= 50.0:
+            match_confidence = 0.80 + ((top_score - 50.0) / 30.0) * 0.10
+        elif top_score >= 25.0:
+            match_confidence = 0.65 + ((top_score - 25.0) / 25.0) * 0.14
+        else:
+            match_confidence = 0.40 + ((top_score - 10.0) / 15.0) * 0.24
 
-            return ChatMessageResponse(
-                conversation_id=conversation_id,
-                message_id=assistant_msg.id,
-                role="assistant",
-                content=content,
-                retrieval_mode="structured_grounded",
-                confidence=0.0,
-                sources=[],
-                steps=[],
-                commands=[],
-                warnings=[],
-                suggested_followups=[
-                    "How do I generate a map?",
-                    "How can I investigate an obstacle detection issue?",
-                    "Which runbook covers the Streamlit visualizer?"
-                ],
-                created_at=assistant_msg.created_at or datetime.utcnow()
-            )
+        match_confidence = round(match_confidence, 2)
 
-        top_runbook, top_score = scored_runbooks[0]
-        runner_ups = [rb for rb, score in scored_runbooks[1:4] if score > 15.0]
+        # If zero candidate runbooks found via direct query, check if conversation history
+        # referenced a specific runbook previously (pronoun / follow-up resolution)
+        if not candidate_runbooks and recent_messages:
+            for past_m in reversed(recent_messages):
+                if past_m.sources:
+                    try:
+                        past_sources = json.loads(past_m.sources)
+                        if past_sources:
+                            prev_rb_id = past_sources[0].get("runbook_id")
+                            prev_rb = db.query(Runbook).filter(Runbook.id == prev_rb_id).first()
+                            if prev_rb:
+                                candidate_runbooks = [prev_rb]
+                                match_confidence = 0.75
+                                break
+                    except Exception:
+                        pass
 
-        # Extract structured steps, commands, warnings, and notes
-        structured_steps: List[TroubleshootingStep] = []
-        commands_list: List[CommandItem] = []
-        warnings_list: List[str] = []
+        context_block = RAGEngine.build_context_block(candidate_runbooks)
+        provider_info = cls.get_active_provider_info()
+        provider = provider_info["provider"]
+
+        llm_output: Dict[str, Any] = {}
+
+        # Attempt call to configured LLM with automatic graceful fallback
+        if provider == "gemini" and settings.GEMINI_API_KEY:
+            try:
+                llm_output = await RAGEngine.call_gemini(
+                    query=query,
+                    context_block=context_block,
+                    history=history_for_llm,
+                    api_key=settings.GEMINI_API_KEY,
+                    model=settings.GEMINI_MODEL
+                )
+            except Exception as e:
+                logger.warning(f"Gemini API call failed ({e}), falling back to local grounded engine.")
+                llm_output = RAGEngine.call_local_grounded_engine(query, candidate_runbooks, confidence=match_confidence)
+        elif provider == "groq" and settings.GROQ_API_KEY:
+            try:
+                llm_output = await RAGEngine.call_groq(
+                    query=query,
+                    context_block=context_block,
+                    history=history_for_llm,
+                    api_key=settings.GROQ_API_KEY,
+                    model=settings.GROQ_MODEL
+                )
+            except Exception as e:
+                logger.warning(f"Groq API call failed ({e}), falling back to local grounded engine.")
+                llm_output = RAGEngine.call_local_grounded_engine(query, candidate_runbooks, confidence=match_confidence)
+        elif provider == "ollama":
+            try:
+                llm_output = await RAGEngine.call_ollama(
+                    query=query,
+                    context_block=context_block,
+                    history=history_for_llm,
+                    base_url=settings.OLLAMA_BASE_URL,
+                    model=settings.OLLAMA_MODEL
+                )
+            except Exception as e:
+                logger.warning(f"Ollama call failed ({e}), falling back to local grounded engine.")
+                llm_output = RAGEngine.call_local_grounded_engine(query, candidate_runbooks, confidence=match_confidence)
+        else:
+            llm_output = RAGEngine.call_local_grounded_engine(query, candidate_runbooks, confidence=match_confidence)
+
+        # Build structured objects
+        content_text = llm_output.get("content", "Procedure retrieved.")
+        confidence = match_confidence
+        steps_raw = llm_output.get("steps", [])
+        commands_raw = llm_output.get("commands", [])
+        warnings_raw = llm_output.get("warnings", [])
+        followups_raw = llm_output.get("suggested_followups", [])
+
+        # Build ChatSourceItems from candidate runbooks
         sources_list: List[ChatSourceItem] = []
-
-        step_numbers = []
-        for step in top_runbook.steps:
-            step_numbers.append(step.step_number)
-            structured_steps.append(TroubleshootingStep(
-                step_number=step.step_number,
-                step_title=step.step_title,
-                instruction=step.instruction,
-                command=step.command,
-                warning=step.warning,
-                notes=step.notes,
-                runbook_title=top_runbook.title
+        for rb in candidate_runbooks:
+            sources_list.append(ChatSourceItem(
+                runbook_id=rb.id,
+                runbook_title=rb.title,
+                category=rb.category,
+                product_area=rb.product_area,
+                components=rb.components,
+                step_numbers=[s.step_number for s in rb.steps],
+                source_url=rb.source_url
             ))
-            if step.command:
-                commands_list.append(CommandItem(
-                    step_number=step.step_number,
-                    title=step.step_title,
-                    command=step.command,
-                    instruction=step.instruction
-                ))
-            if step.warning:
-                warnings_list.append(f"Step {step.step_number} ({top_runbook.title}): {step.warning}")
 
-        sources_list.append(ChatSourceItem(
-            runbook_id=top_runbook.id,
-            runbook_title=top_runbook.title,
-            category=top_runbook.category,
-            product_area=top_runbook.product_area,
-            components=top_runbook.components,
-            step_numbers=step_numbers,
-            source_url=top_runbook.source_url
-        ))
-
-        # Format markdown explanation
-        md_lines = [
-            f"### Documented Procedure: {top_runbook.title}",
-            "",
-            f"**Category:** `{top_runbook.category or 'N/A'}` | **Product Area:** `{top_runbook.product_area or 'N/A'}` | **Components:** `{top_runbook.components or 'N/A'}`",
-            ""
+        structured_steps = [
+            TroubleshootingStep(
+                step_number=int(s.get("step_number") or idx + 1),
+                step_title=s.get("step_title"),
+                instruction=s.get("instruction"),
+                command=s.get("command"),
+                warning=s.get("warning"),
+                notes=s.get("notes"),
+                runbook_title=s.get("runbook_title") or (candidate_runbooks[0].title if candidate_runbooks else "Runbook")
+            )
+            for idx, s in enumerate(steps_raw)
         ]
 
-        if top_runbook.description:
-            md_lines.append(f"{top_runbook.description}\n")
+        commands_list = [
+            CommandItem(
+                step_number=int(c.get("step_number") or idx + 1),
+                title=c.get("title"),
+                command=c.get("command", ""),
+                instruction=c.get("instruction")
+            )
+            for idx, c in enumerate(commands_raw)
+            if c.get("command")
+        ]
 
-        for s in structured_steps:
-            title_text = f"**Step {s.step_number}: {s.step_title}**" if s.step_title else f"**Step {s.step_number}**"
-            md_lines.append(title_text)
-            if s.instruction:
-                md_lines.append(f"{s.instruction}\n")
-            if s.command:
-                md_lines.append(f"```bash\n{s.command}\n```\n")
-            if s.warning:
-                md_lines.append(f"> ⚠️ **Warning:** {s.warning}\n")
-            if s.notes:
-                md_lines.append(f"> ℹ️ **Notes:** {s.notes}\n")
-
-        # Clarifying questions if several runbooks matched closely
-        followups = []
-        if runner_ups:
-            md_lines.append("---")
-            md_lines.append("#### Related or Alternative Runbooks:")
-            for other_rb in runner_ups:
-                md_lines.append(f"- **{other_rb.title}** (`{other_rb.product_area or 'General'}` / `{other_rb.components or 'N/A'}`)")
-                followups.append(f"Tell me about {other_rb.title}")
-        else:
-            followups.append("Show all steps for this runbook")
-            if top_runbook.components:
-                followups.append(f"What other runbooks exist for {top_runbook.components.split(',')[0]}?")
-
-        full_content = "\n".join(md_lines)
-
-        # Save assistant message
         assistant_msg = Message(
             conversation_id=conversation_id,
             role="assistant",
-            content=full_content,
+            content=content_text,
             sources=json.dumps([s.model_dump() for s in sources_list]),
             commands=json.dumps([c.model_dump() for c in commands_list]),
-            warnings=json.dumps(warnings_list),
-            suggested_followups=json.dumps(followups[:4])
+            warnings=json.dumps(warnings_raw),
+            suggested_followups=json.dumps(followups_raw[:4])
         )
         db.add(assistant_msg)
         db.commit()
-
-        confidence = min(0.99, max(0.4, top_score / 100.0))
 
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=assistant_msg.id,
             role="assistant",
-            content=full_content,
-            retrieval_mode="structured_grounded",
+            content=content_text,
+            retrieval_mode=f"{provider}_grounded_rag",
             confidence=round(confidence, 2),
             sources=sources_list,
             steps=structured_steps,
             commands=commands_list,
-            warnings=warnings_list,
-            suggested_followups=followups[:4],
+            warnings=warnings_raw,
+            suggested_followups=followups_raw[:4],
             created_at=assistant_msg.created_at or datetime.utcnow()
         )
+
+    @classmethod
+    def generate_response(
+        cls,
+        db: Session,
+        query: str,
+        conversation_id: Optional[str] = None,
+        ticket_context: Optional[dict] = None
+    ) -> ChatMessageResponse:
+        """Synchronous wrapper for FastAPI router execution."""
+        return asyncio.run(cls.generate_response_async(
+            db=db,
+            query=query,
+            conversation_id=conversation_id,
+            ticket_context=ticket_context
+        ))

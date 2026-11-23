@@ -46,9 +46,25 @@ export const MessageItem: React.FC<MessageItemProps> = ({
             </span>
           </div>
           {message.confidence !== undefined && (
-            <span className="text-[11px] font-mono text-slate-400">
-              Match Confidence: {Math.round(message.confidence * 100)}%
-            </span>
+            <div className="flex items-center gap-1.5">
+              {message.confidence >= 0.85 ? (
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                  High Match ({Math.round(message.confidence * 100)}%)
+                </span>
+              ) : message.confidence >= 0.65 ? (
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/80 dark:text-sky-300 border border-sky-300 dark:border-sky-800">
+                  Strong Match ({Math.round(message.confidence * 100)}%)
+                </span>
+              ) : message.confidence >= 0.45 ? (
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                  Partial Match ({Math.round(message.confidence * 100)}%)
+                </span>
+              ) : (
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
+                  No Direct Match
+                </span>
+              )}
+            </div>
           )}
         </div>
 

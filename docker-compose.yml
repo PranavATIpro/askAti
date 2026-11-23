@@ -31,7 +31,7 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       DEBUG: ${DEBUG:-True}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-runbook_user}:${POSTGRES_PASSWORD:-runbook_pass}@db:5432/${POSTGRES_DB:-runbooks_db}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-runbook_user}:${POSTGRES_PASSWORD:-runbook_pass}@db:5432/${POSTGRES_DB:-runbooks_db}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173}
       ADMIN_API_KEY: ${ADMIN_API_KEY:-ati_admin_dev_secret_change_in_prod}
       ENABLE_PGVECTOR: ${ENABLE_PGVECTOR:-false}

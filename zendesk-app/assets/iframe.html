@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ATI Motors Runbook Assistant - Zendesk Sidebar</title>
+  <script src="https://static.zdassets.com/zendesk_app_framework_sdk/2.0/zaf_sdk.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 12px;
+      color: #64748b;
+      font-size: 13px;
+    }
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid #e2e8f0;
+      border-top-color: #0284c7;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">
+    <div class="spinner"></div>
+    <div>Connecting to ATI Runbook Assistant...</div>
+  </div>
+
+  <iframe id="app-frame" style="display: none;" allow="clipboard-read; clipboard-write"></iframe>
+
+  <script>
+    var client = ZAFClient.init();
+
+    // Auto-resize sidebar frame to fill Zendesk panel
+    client.invoke('resize', { width: '100%', height: '800px' });
+
+    // Retrieve ticket context
+    Promise.all([
+      client.metadata(),
+      client.get('ticket.id'),
+      client.get('ticket.subject'),
+      client.get('ticket.tags')
+    ]).then(function(results) {
+      var metadata = results[0];
+      var ticketId = results[1]['ticket.id'];
+      var subject = results[2]['ticket.subject'];
+      var tags = results[3]['ticket.tags'] || [];
+
+      var baseUrl = (metadata.settings && metadata.settings.runbookAssistantUrl) || 'http://localhost:5173';
+      var appUrl = baseUrl + '/?mode=zendesk&ticket_id=' + encodeURIComponent(ticketId) + 
+                   '&subject=' + encodeURIComponent(subject || '') + 
+                   '&tags=' + encodeURIComponent(tags.join(','));
+
+      var frame = document.getElementById('app-frame');
+      frame.src = appUrl;
+      frame.onload = function() {
+        document.getElementById('loading').style.display = 'none';
+        frame.style.display = 'block';
+      };
+
+      // Listen for messages from the Runbook Assistant iframe
+      window.addEventListener('message', function(event) {
+        if (event.data && event.data.type === 'INSERT_TICKET_COMMENT') {
+          var commentText = event.data.text;
+          client.set('comment.text', commentText).then(function() {
+            client.invoke('notify', 'Runbook solution inserted into ticket reply!', 'notice');
+          });
+        }
+      });
+    }).catch(function(err) {
+      console.error('Error initializing ZAF client:', err);
+      // Fallback to localhost if outside real Zendesk environment
+      var frame = document.getElementById('app-frame');
+      frame.src = 'http://localhost:5173/?mode=zendesk';
+      document.getElementById('loading').style.display = 'none';
+      frame.style.display = 'block';
+    });
+  </script>
+</body>
+</html>

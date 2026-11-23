@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/layout/Sidebar';
 import { ChatWorkspace } from './components/chat/ChatWorkspace';
 import { RunbookBrowser } from './components/browser/RunbookBrowser';
-import { IngestionAdmin } from './components/admin/IngestionAdmin';
 import { ZendeskSidebarWidget } from './components/zendesk/ZendeskSidebarWidget';
 import { RunbookDetailModal } from './components/browser/RunbookDetailModal';
 import { api } from './services/api';
 import { ChatMessage, Conversation, ChatSourceItem } from './types';
 
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'chat' | 'browser' | 'admin' | 'zendesk'>('chat');
+  // Check if embedded in Zendesk iframe or sidebar mode
+  const urlParams = new URLSearchParams(window.location.search);
+  const isZendeskMode = urlParams.get('mode') === 'zendesk' || urlParams.get('sidebar') === 'true';
+
+  const [activeTab, setActiveTab] = useState<'chat' | 'browser'>('chat');
   const [isDark, setIsDark] = useState<boolean>(() => {
     return localStorage.getItem('ati_theme') === 'dark';
   });
@@ -21,16 +24,34 @@ export const App: React.FC = () => {
   const [totalRunbooks, setTotalRunbooks] = useState(0);
   const [modalRunbookId, setModalRunbookId] = useState<string | null>(null);
 
-  // Sync theme to document
-  useEffect(() => {
-    if (isDark) {
+  // Sync theme to document and HTML root attributes
+  const applyTheme = (dark: boolean) => {
+    if (dark) {
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+      document.documentElement.setAttribute('data-theme', 'dark');
+      document.documentElement.style.colorScheme = 'dark';
       localStorage.setItem('ati_theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+      document.documentElement.setAttribute('data-theme', 'light');
+      document.documentElement.style.colorScheme = 'light';
       localStorage.setItem('ati_theme', 'light');
     }
+  };
+
+  useEffect(() => {
+    applyTheme(isDark);
   }, [isDark]);
+
+  const handleToggleTheme = () => {
+    setIsDark((prev) => {
+      const next = !prev;
+      applyTheme(next);
+      return next;
+    });
+  };
 
   // Load conversations and total runbooks count on mount
   const refreshMetadata = () => {
@@ -153,6 +174,21 @@ export const App: React.FC = () => {
     handleSendMessage(`Tell me the procedure and commands for ${title}`);
   };
 
+  // If in direct Zendesk sidebar iframe mode
+  if (isZendeskMode) {
+    return (
+      <div className="h-screen w-screen bg-slate-50 dark:bg-slate-950 font-sans overflow-hidden">
+        <ZendeskSidebarWidget onViewRunbook={handleViewRunbookFromSource} standalone={true} />
+        <RunbookDetailModal
+          runbookId={modalRunbookId}
+          onClose={() => setModalRunbookId(null)}
+          onAskAboutRunbook={handleAskAboutRunbook}
+          onRunbookUpdated={refreshMetadata}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 font-sans">
       {/* Sidebar Navigation */}
@@ -165,7 +201,7 @@ export const App: React.FC = () => {
         onNewConversation={handleNewConversation}
         onDeleteConversation={handleDeleteConversation}
         isDark={isDark}
-        onToggleTheme={() => setIsDark(!isDark)}
+        onToggleTheme={handleToggleTheme}
         totalRunbooks={totalRunbooks}
       />
 
@@ -184,19 +220,14 @@ export const App: React.FC = () => {
         {activeTab === 'browser' && (
           <RunbookBrowser onAskAboutRunbook={handleAskAboutRunbook} />
         )}
-
-        {activeTab === 'admin' && <IngestionAdmin />}
-
-        {activeTab === 'zendesk' && (
-          <ZendeskSidebarWidget onViewRunbook={handleViewRunbookFromSource} />
-        )}
       </main>
 
-      {/* Global Runbook Detail Drawer */}
+      {/* Global Runbook Detail Drawer (with View & Manual Edit Mode) */}
       <RunbookDetailModal
         runbookId={modalRunbookId}
         onClose={() => setModalRunbookId(null)}
         onAskAboutRunbook={handleAskAboutRunbook}
+        onRunbookUpdated={refreshMetadata}
       />
     </div>
   );
